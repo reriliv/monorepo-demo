@@ -1,11 +1,17 @@
-import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import heroImg from './assets/hero.png';
+import reactLogo from './assets/react.svg';
+import viteLogo from './assets/vite.svg';
+import './App.css';
+import { create } from 'zustand';
+
+const useCountStore = create<{ count: number, increment: () => void; }>((set) => ({
+  count: 0,
+  increment: () => set((state) => ({ count: state.count + 1 })),
+}));
 
 function App() {
-  const [count, setCount] = useState(0)
+  const { count, increment } = useCountStore();
 
   return (
     <>
@@ -24,7 +30,7 @@ function App() {
         <button
           type="button"
           className="counter"
-          onClick={() => setCount((count) => count + 1)}
+          onClick={increment}
         >
           Count is {count}
         </button>
@@ -116,7 +122,7 @@ function App() {
       <div className="ticks"></div>
       <section id="spacer"></section>
     </>
-  )
+  );
 }
 
-export default App
+export default App;
