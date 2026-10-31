@@ -1,0 +1,43 @@
+name: Deploy Single App
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/web/**'
+      - 'apps/api/**'
+      - 'packages/**'
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      apps: ${{steps.filter.outputs.changes}}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filter: |
+            web:
+              - 'apps/web/**'
+              - 'packages/**'
+            api:
+              - 'apps/api/**'
+              - 'packages/**'
+            admin:
+              - 'apps/admin/**'
+              - 'packages/**'
+
+  deploy:
+    needs: changes
+    if: ${{needs.changes.outputs.apps != '[]' && needs.changes.outputs.apps != ''}}
+    strategy:
+      fail-fast: false
+      matrix:
+        app: ${{fromJson(needs.changes.outputs.apps)}}
+    uses: ./.github/workflows/_deploy-reusable.yml
+    with:
+      app_name: ${{matrix.app}}
+      app_path: apps/${{matrix.app}}
+    secrets: inherit
