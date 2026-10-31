@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+  <meta charset="UTF-8">
+  <title>Ollama Stream Test</title>
+  <style>
+    body {
+      font-family: monospace;
+      padding: 20px;
+      background: #1e1e1e;
+      color: #d4d4d4;
+    }
+
+    #output {
+      border: 1px solid #333;
+      padding: 10px;
+      min-height: 200px;
+      white-space: pre-wrap;
+      margin-top: 10px;
+    }
+
+    .tool {
+      color: #4ec9b0;
+      background: #252526;
+      padding: 5px;
+      margin: 5px 0;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+
+<body>
+  <input type="text" id="prompt" value="帮我读取 apps/api/package.json 文件" style="width: 300px;">
+  <button onclick="startStream()">发送请求</button>
+  <button onclick="stopStream()">中断</button>
+
+  <div id="output"></div>
+
+  <script>
+    let abortController = null;
+
+    async function startStream() {
+      const prompt = document.getElementById('prompt').value;
+      const sessionId = 'session-123'; // 可以通过生成 UUID 来区分不同会话
+      const output = document.getElementById('output');
+      output.innerHTML = '';
+
+      abortController = new AbortController();
+
+      try {
+        const response = await fetch('/chat/stream', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ prompt, sessionId }),
+          signal: abortController.signal
+        });
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          // 将二进制数据转为文本，并按 SSE 格式拆分
+          const chunk = decoder.decode(value);
+          const lines = chunk.split('\n\n').filter(line => line.trim() !== '');
+
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              const data = JSON.parse(line.substring(6));
+              if (data.type === 'text') {
+                output.innerHTML += data.content;
+                window.scrollTo(0, document.body.scrollHeight);
+              } else if (data.type === 'tool_call') {
+                const toolDiv = document.createElement('div');
+                toolDiv.className = 'tool';
+                toolDiv.innerText = `[执行工具]: ${data.content.name}(${JSON.stringify(data.content.args)})`;
+                output.appendChild(toolDiv);
+              } else if (data.type === 'error') {
+                output.innerHTML += `\n[错误]: ${data.content}`;
+              }
+            }
+          }
+        }
+      } catch (error) {
+        if (error.name === 'AbortError') console.log('中断请求');
+        else console.error(error);
+      }
+    }
+
+    function stopStream() {
+      if (abortController) {
+        abortController.abort();
+        abortController = null;
+      }
+    }
+  </script>
+</body>
+
+</html>
