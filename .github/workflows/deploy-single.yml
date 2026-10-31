@@ -1,41 +1,23 @@
 name: Deploy Single App
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/web/**'
-      - 'apps/api/**'
-      - 'packages/**'
+  workflow_dispatch:
+    inputs:
+      app:
+        description: '选择要部署的 App'
+        required: true
+        type: choice
+        options:
+          - web
+          - api
+          - admin
 
 jobs:
-  changes:
-    runs-on: ubuntu-latest
-    outputs:
-      apps: ${{steps.filter.outputs.changes}}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dorny/paths-filter@v3
-        id: filter
-        with:
-          filter: |
-            web:
-              - 'apps/web/**'
-              - 'packages/**'
-            api:
-              - 'apps/api/**'
-              - 'packages/**'
-            admin:
-              - 'apps/admin/**'
-              - 'packages/**'
-
   deploy:
-    needs: changes
-    if: ${{needs.changes.outputs.apps != '[]' && needs.changes.outputs.apps != ''}}
     strategy:
       fail-fast: false
       matrix:
-        app: ${{fromJson(needs.changes.outputs.apps)}}
+        app: ${{fromJson(format('["{0}"]', inputs.app))}}
     uses: ./.github/workflows/_deploy-reusable.yml
     with:
       app_name: ${{matrix.app}}
