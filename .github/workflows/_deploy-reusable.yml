@@ -1,81 +1,101 @@
-name: Reusable Deployment Workflow
+name: Reusable Deploy
 
 on:
   workflow_call:
     inputs:
       app_name:
-        description: 'The name of the application to deploy'
         required: true
         type: string
       app_path:
-        description: 'The path to the application directory'
         required: true
         type: string
     secrets:
       SSH_HOST:
-        description: 'SSH Host'
         required: true
       SSH_USER:
-        description: 'SSH User'
         required: true
       SSH_KEY:
-        description: 'SSH Private Key'
         required: true
       SSH_PORT:
-        description: 'SSH Port'
         required: false
 
+permissions:
+  contents: read
+
 jobs:
-  build_and_deploy:
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment: production
+    concurrency:
+      group: deploy-${{ inputs.app_name }}
+      cancel-in-progress: false
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4.2.2
+      - name: Checkout
+        uses: actions/checkout@v4
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Build image
         run: |
-          docker build -t ${{ inputs.app_name }}:${{ github.sha }} \
-          -f ${{ inputs.app_path }}/Dockerfile .
+          docker build \
+            -t ${{ inputs.app_name }}:${{ github.sha }} \
+            -f ${{ inputs.app_path }}/Dockerfile \
+            .
 
       - name: Save image to tar
+        run: docker save ${{ inputs.app_name }}:${{ github.sha }} | gzip > image.tar.gz
+
+      - name: Deploy via Native SCP/SSH (Plain Key)
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
         run: |
-          docker save ${{ inputs.app_name }}:${{ github.sha }} | gzip > image.tar.gz
-
-      - name: Copy image to server
-        uses: appleboy/scp-action@v0.1.7
-        with:
-          host: ${{secrets.SSH_HOST}}
-          username: ${{secrets.SSH_USER}}
-          key: ${{secrets.SSH_KEY}}
-          port: ${{secrets.SSH_PORT}}
-          source: "image.tar.gz"
-          target: "/tmp/${{inputs.app_name}}"
-
-      - name: Deploy on server
-        uses: appleboy/ssh-action@v1.0.3
-        with:
-          host: ${{secrets.SSH_HOST}}
-          username: ${{secrets.SSH_USER}}
-          key: ${{secrets.SSH_KEY}}
-          port: ${{secrets.SSH_PORT}}
-          scripts:
-            cd /root/apps
-            echo "$APP_TAG=${{github.sha}}" >> .env.tags
-            docker compose --env-file .env.tags up -d $APP
-          # script: |
-          #   set -e
-          #   APP=${{inputs.app_name}}
-          #   cd /tmp/$APP
-          #   docker load < image.tar.gz
-          #   docker stop $APP || true
-          #   docker rm $APP || true
-          #   docker run -d --name $APP \
-          #     --restart unless-stopped \
-          #     -p $(cat /root/apps/$APP/port):$(cat /root/apps/$APP/container_port) \
-          #     --env-file /root/apps/$APP/.env \
-          #     $APP:${{github.sha}}
-          #   docker image prune -f
-          #   rm -rf /tmp/$APP
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          
+          # ==========================================
+          # 核心：使用 printf 写入私钥，完美保留多行格式
+          # ==========================================
+          printf "%s" "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          
+          # 验证私钥是否完整写入（检查是否有头尾）
+          echo "==== 检查私钥格式 ===="
+          head -n 1 ~/.ssh/id_ed25519
+          tail -n 1 ~/.ssh/id_ed25519
+          
+          # 阿里云 SSH 算法兼容参数
+          SSH_OPTS="-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa,ecdsa-sha2-nistp256 -o PubkeyAcceptedKeyTypes=+ssh-rsa,ecdsa-sha2-nistp256"
+          ssh-keyscan -t rsa,ecdsa -p $SSH_PORT $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
+          
+          # 1. 创建临时目录
+          ssh -i ~/.ssh/id_ed25519 -p $SSH_PORT $SSH_OPTS $SSH_USER@$SSH_HOST "mkdir -p /tmp/${{ inputs.app_name }}"
+          
+          # 2. 传输镜像
+          echo "==== 开始传输镜像 ===="
+          scp -i ~/.ssh/id_ed25519 -P $SSH_PORT $SSH_OPTS image.tar.gz $SSH_USER@$SSH_HOST:/tmp/${{ inputs.app_name }}/
+          
+          # 3. 远程执行部署
+          echo "==== 开始在服务器执行部署 ===="
+          ssh -i ~/.ssh/id_ed25519 -p $SSH_PORT $SSH_OPTS $SSH_USER@$SSH_HOST << EOF
+            set -euo pipefail
+            APP="${{ inputs.app_name }}"
+            TAG="${{ github.sha }}"
+            
+            cd "/tmp/\$APP"
+            docker load < image.tar.gz
+            rm -rf "/tmp/\$APP"
+            
+            cd /opt/apps
+            touch .env.tags
+            grep -v "^\${APP^^}_TAG=" .env.tags > .env.tags.tmp || true
+            echo "\${APP^^}_TAG=\$TAG" >> .env.tags.tmp
+            mv .env.tags.tmp .env.tags
+            
+            docker compose --env-file .env.tags up -d --no-deps "\$APP"
+            docker image prune -f
+          EOF

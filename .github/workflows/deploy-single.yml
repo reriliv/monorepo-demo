@@ -1,8 +1,5 @@
 name: Deploy Single App
 
-permissions:
-  contents: read
-
 on:
   workflow_dispatch:
     inputs:
@@ -14,17 +11,21 @@ on:
           - web
           - api
           - admin
+          # 新增 app 时，记得在这里加一行
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
     strategy:
       fail-fast: false
       matrix:
-        app: ${{fromJson(format('["{0}"]', inputs.app))}}
+        app: ${{ fromJson(format('["{0}"]', inputs.app)) }}
     uses: ./.github/workflows/_deploy-reusable.yml
     with:
-      app_name: ${{matrix.app}}
-      app_path: apps/${{matrix.app}}
+      app_name: ${{ matrix.app }}
+      app_path: apps/${{ matrix.app }}
     secrets:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}

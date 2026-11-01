@@ -2,37 +2,35 @@ name: Deploy All Apps
 
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
-    # 可选：只在 apps/ 或 packages/ 变更时整体部署
-    # paths:
-    #   - 'apps/**'
-    #   - 'packages/**'
-    #   - '.github/workflows/**'
+
+permissions:
+  contents: read
 
 jobs:
   discover:
-    environment: production
     runs-on: ubuntu-latest
+    environment: production
     outputs:
-      apps: ${{steps.list.outputs.apps}}
+      apps: ${{ steps.list.outputs.apps }}
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v4
       - id: list
         run: |
+          # 自动扫描 apps 目录下的所有文件夹
           APPS=$(ls apps | jq -R -s -c 'split("\n")[:-1]')
-          echo "apps=$APPS" >> $GITHUB_OUTPUT
+          echo "apps=$APPS" >> "$GITHUB_OUTPUT"
+          echo "Detected apps: $APPS"
 
   deploy:
     needs: discover
     strategy:
       fail-fast: false
       matrix:
-        app: ${{fromJson(needs.discover.outputs.apps)}}
+        app: ${{ fromJson(needs.discover.outputs.apps) }}
     uses: ./.github/workflows/_deploy-reusable.yml
     with:
-      app_name: ${{matrix.app}}
-      app_path: apps/${{matrix.app}}
+      app_name: ${{ matrix.app }}
+      app_path: apps/${{ matrix.app }}
     secrets:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
