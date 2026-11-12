@@ -1,32 +1,28 @@
 # ==========================================
-# 阶段 1：构建阶段 (Builder) - 用 Node 编译代码
+# 阶段 1：构建阶段
 # ==========================================
-# syntax=docker/dockerfile:1.4
 FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY . .
 
-RUN corepack enable
-
-RUN pnpm install --frozen-lockfile
-
-WORKDIR /app/apps/web
-
-RUN pnpm run build
+RUN corepack enable && pnpm install --frozen-lockfile
+RUN pnpm --filter web build
 
 # ==========================================
-# 阶段 2：运行阶段 (Runner) - 用 Nginx 托管静态文件
+# 阶段 2：运行阶段 (使用 Nginx)
 # ==========================================
 FROM nginx:alpine
-# WORKDIR /app
 
-RUN mv /app/apps/web/dist /usr/share/nginx/html/web
+# 1. 删除默认配置
+RUN rm /etc/nginx/conf.d/default.conf
 
-RUN rm /etc/nginx/conf.d/web.conf
+# 2. 拷贝项目专属的 Nginx 配置
+# 注意：此处源路径为 apps/web/nginx.conf
+COPY apps/web/deploy/nginx.conf /etc/nginx/conf.d/web.conf
 
-COPY --from=builder /app/apps/web/deploy/nginx.conf /etc/nginx/conf.d/web.conf
+# 3. 拷贝静态产物
+COPY --from=builder /app/apps/web/dist /usr/share/nginx/html
 
 EXPOSE 80
-
 CMD ["nginx", "-g", "daemon off;"]

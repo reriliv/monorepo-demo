@@ -10,14 +10,14 @@ on:
         required: true
         type: string
     secrets:
-      SSH_HOST:
-        required: true
-      SSH_USER:
-        required: true
-      SSH_KEY:
-        required: true
-      SSH_PORT:
-        required: false
+      SSH_HOST: { required: true }
+      SSH_USER: { required: true }
+      SSH_KEY: { required: true }
+      SSH_PORT: { required: false }
+      REGISTRY_HOST: { required: true }
+      REGISTRY_NAMESPACE: { required: true }
+      REGISTRY_USERNAME: { required: true }
+      REGISTRY_PASSWORD: { required: true }
 
 permissions:
   contents: read
@@ -28,7 +28,7 @@ jobs:
     environment: production
     concurrency:
       group: deploy-${{ inputs.app_name }}
-      cancel-in-progress: false
+      cancel-in-progress: true
 
     steps:
       - name: Checkout
@@ -37,65 +37,65 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build image
-        run: |
-          docker build \
-            -t ${{ inputs.app_name }}:${{ github.sha }} \
-            -f ${{ inputs.app_path }}/Dockerfile \
-            .
+      # 1. 登录阿里云 ACR
+      - name: Login to Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.REGISTRY_HOST }}
+          username: ${{ secrets.REGISTRY_USERNAME }}
+          password: ${{ secrets.REGISTRY_PASSWORD }}
 
-      - name: Save image to tar
-        run: docker save ${{ inputs.app_name }}:${{ github.sha }} | gzip > image.tar.gz
+      # 2. 构建并推送镜像 (带 GitHub Actions 缓存)
+      - name: Build and Push Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ inputs.app_path }}/Dockerfile
+          push: true
+          tags: |
+            ${{ secrets.REGISTRY_HOST }}/${{ secrets.REGISTRY_NAMESPACE }}/${{ inputs.app_name }}:${{ github.sha }}
+            ${{ secrets.REGISTRY_HOST }}/${{ secrets.REGISTRY_NAMESPACE }}/${{ inputs.app_name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Deploy via Native SCP/SSH (Plain Key)
+      # 3. SSH 登录服务器，拉取并重启服务
+      - name: Deploy on Server
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_KEY }}
           SSH_HOST: ${{ secrets.SSH_HOST }}
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT || '22' }}
+          REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+          REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+          REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
         run: |
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf "%s" "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
           
-          # ==========================================
-          # 核心：使用 printf 写入私钥，完美保留多行格式
-          # ==========================================
-          printf "%s" "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          
-          # 验证私钥是否完整写入（检查是否有头尾）
-          echo "==== 检查私钥格式 ===="
-          head -n 1 ~/.ssh/id_ed25519
-          tail -n 1 ~/.ssh/id_ed25519
-          
-          # 阿里云 SSH 算法兼容参数
+          # 兼容老旧云服务器的 SSH 算法
           SSH_OPTS="-o StrictHostKeyChecking=no -o HostKeyAlgorithms=+ssh-rsa,ecdsa-sha2-nistp256 -o PubkeyAcceptedKeyTypes=+ssh-rsa,ecdsa-sha2-nistp256"
           ssh-keyscan -t rsa,ecdsa -p $SSH_PORT $SSH_HOST >> ~/.ssh/known_hosts 2>/dev/null
-          
-          # 1. 创建临时目录
-          ssh -i ~/.ssh/id_ed25519 -p $SSH_PORT $SSH_OPTS $SSH_USER@$SSH_HOST "mkdir -p /tmp/${{ inputs.app_name }}"
-          
-          # 2. 传输镜像
-          echo "==== 开始传输镜像 ===="
-          scp -i ~/.ssh/id_ed25519 -P $SSH_PORT $SSH_OPTS image.tar.gz $SSH_USER@$SSH_HOST:/tmp/${{ inputs.app_name }}/
-          
-          # 3. 远程执行部署
-          echo "==== 开始在服务器执行部署 ===="
+
           ssh -i ~/.ssh/id_ed25519 -p $SSH_PORT $SSH_OPTS $SSH_USER@$SSH_HOST << EOF
             set -euo pipefail
             APP="${{ inputs.app_name }}"
             TAG="${{ github.sha }}"
             
-            cd "/tmp/\$APP"
-            docker load < image.tar.gz
-            rm -rf "/tmp/\$APP"
+            # 1. 服务器登录阿里云 ACR
+            echo "$REGISTRY_PASSWORD" | docker login $REGISTRY_HOST -u "$REGISTRY_USERNAME" --password-stdin
             
+            # 2. 更新 .env.tags (记录当前部署的 TAG)
             cd /opt/apps
             touch .env.tags
             grep -v "^\${APP^^}_TAG=" .env.tags > .env.tags.tmp || true
             echo "\${APP^^}_TAG=\$TAG" >> .env.tags.tmp
             mv .env.tags.tmp .env.tags
             
+            # 3. 拉取最新镜像并重启
+            echo "==== 开始拉取镜像并重启 \$APP ===="
+            docker compose --env-file .env.tags pull "\$APP"
             docker compose --env-file .env.tags up -d --no-deps "\$APP"
+            
+            # 4. 清理无用镜像
             docker image prune -f
           EOF

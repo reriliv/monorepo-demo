@@ -9,14 +9,13 @@ permissions:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    environment: production
     outputs:
       apps: ${{ steps.list.outputs.apps }}
     steps:
       - uses: actions/checkout@v4
       - id: list
         run: |
-          # 自动扫描 apps 目录下的所有文件夹
+          # 自动扫描 apps 目录下的所有应用
           APPS=$(ls apps | jq -R -s -c 'split("\n")[:-1]')
           echo "apps=$APPS" >> "$GITHUB_OUTPUT"
           echo "Detected apps: $APPS"
@@ -36,3 +35,7 @@ jobs:
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      REGISTRY_NAMESPACE: ${{ secrets.REGISTRY_NAMESPACE }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}
