@@ -57,6 +57,8 @@ jobs:
             ${{ secrets.REGISTRY_HOST }}/${{ secrets.REGISTRY_NAMESPACE }}/${{ inputs.app_name }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: false
+          outputs: type=image,oci-mediatypes=false
 
       # 3. SSH 登录服务器，拉取并重启服务
       - name: Deploy on Server
