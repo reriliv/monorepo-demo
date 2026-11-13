@@ -8,6 +8,9 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
   constructor(configService: ConfigService) {
     const adapter = new PrismaPg({
       connectionString: configService.getOrThrow<string>('DATABASE_URL'),
+      options: '-c search_path=public',
+      max: 10,
+      idleTimeoutMillis: 30000,
     });
     super({ adapter });
   }
