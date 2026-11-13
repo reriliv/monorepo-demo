@@ -15,7 +15,7 @@ RUN pnpm --filter web build
 FROM nginx:alpine
 
 # 1. 删除默认配置
-# RUN rm /etc/nginx/conf.d/default.conf
+RUN rm -f /etc/nginx/conf.d/default.conf
 
 # 2. 拷贝项目专属的 Nginx 配置
 # 注意：此处源路径为 apps/web/nginx.conf
