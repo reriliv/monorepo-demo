@@ -2,7 +2,7 @@ import { Body, Controller, Get, Post, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ConversationService } from './conversation.service';
 
-@Controller("/conversation")
+@Controller("conversation")
 export class ConversationController {
   constructor(private readonly conversationService: ConversationService) { }
 
@@ -56,7 +56,7 @@ export class ConversationController {
   //   }
   //   await this.conversationService.streamChat(prompt, res);
   // }
-  @Post('chat/stream')
+  @Post('chatStream')
   async chatStream(
     @Body('prompt') prompt: string,
     @Body('sessionId') sessionId: string,

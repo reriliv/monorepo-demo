@@ -10,8 +10,7 @@ on:
         options:
           - web
           - api
-          - admin
-          # 新增 app 时，记得在这里加一行
+          # 有新增 app 记得在这里加一行
 
 permissions:
   contents: read
@@ -31,3 +30,7 @@ jobs:
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      REGISTRY_NAMESPACE: ${{ secrets.REGISTRY_NAMESPACE }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}

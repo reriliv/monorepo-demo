@@ -7,32 +7,38 @@ permissions:
   contents: read
 
 jobs:
-  discover:
+  # 1. 配置需要部署的项目列表
+  setup:
     runs-on: ubuntu-latest
-    environment: production
     outputs:
-      apps: ${{ steps.list.outputs.apps }}
+      # 将这里定义的列表输出给后续的 deploy job
+      app_list: ${{ steps.set-matrix.outputs.matrix }}
     steps:
-      - uses: actions/checkout@v4
-      - id: list
+      - name: Define App Matrix
+        id: set-matrix
         run: |
-          # 自动扫描 apps 目录下的所有文件夹
-          APPS=$(ls apps | jq -R -s -c 'split("\n")[:-1]')
-          echo "apps=$APPS" >> "$GITHUB_OUTPUT"
-          echo "Detected apps: $APPS"
+          # 在这里维护你想要一键部署的项目列表
+          # 注意：必须是合法的 JSON 数组格式，并且字符串用双引号
+          echo 'matrix=["web", "api"]' >> "$GITHUB_OUTPUT"
 
+  # 2. 并发部署列表中的所有项目
   deploy:
-    needs: discover
+    needs: setup
     strategy:
       fail-fast: false
       matrix:
-        app: ${{ fromJson(needs.discover.outputs.apps) }}
+        # 读取 setup job 输出的列表
+        app: ${{ fromJson(needs.setup.outputs.app_list) }}
     uses: ./.github/workflows/_deploy-reusable.yml
     with:
       app_name: ${{ matrix.app }}
-      app_path: apps/${{ matrix.app }}
+      app_path: apps/${{ matrix.app }} # 如果你的路径有特殊规律，也可以在这里修改
     secrets:
       SSH_HOST: ${{ secrets.SSH_HOST }}
       SSH_USER: ${{ secrets.SSH_USER }}
       SSH_KEY: ${{ secrets.SSH_KEY }}
       SSH_PORT: ${{ secrets.SSH_PORT }}
+      REGISTRY_HOST: ${{ secrets.REGISTRY_HOST }}
+      REGISTRY_NAMESPACE: ${{ secrets.REGISTRY_NAMESPACE }}
+      REGISTRY_USERNAME: ${{ secrets.REGISTRY_USERNAME }}
+      REGISTRY_PASSWORD: ${{ secrets.REGISTRY_PASSWORD }}

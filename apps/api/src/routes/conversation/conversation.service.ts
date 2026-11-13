@@ -69,7 +69,7 @@ export class ConversationService {
     try {
       // 第一轮请求
       const response = await ollama.chat({
-        model: 'qwen2.5-coder:7b',
+        model: 'SetneufPT/Qwopus3.5-4B-Coder-MTP_Q4_64k_8GB-GPU',
         messages,
         tools,
         stream: false, // 工具调用阶段通常不流式输出，以便一次拿到完整 tool_calls
@@ -107,7 +107,7 @@ export class ConversationService {
 
         // 6. 带着工具结果进行第二轮请求，让模型生成最终回答（并流式输出）
         const finalStream = await ollama.chat({
-          model: 'qwen2.5-coder:7b',
+          model: 'SetneufPT/Qwopus3.5-4B-Coder-MTP_Q4_64k_8GB-GPU',
           messages,
           stream: true,
         });
